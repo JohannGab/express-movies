@@ -4,97 +4,84 @@ const bodyParser = require('body-parser');
 const multer = require('multer');
 const upload = multer();
 
-const PORT = 3000;
-let frenchMovies = [];
+var expressJwt = require('express-jwt');
 
-app.use('/public', express.static('public'));
-app.use(bodyParser.urlencoded({ extended: false }));
+
+// const faker = require('faker');
+// faker.locale = "fr";
+
+const config = require('./config');
+const movieController = require('./controllers/movieControler');
+const authController = require('./controllers/authController');
+
+const mongoose = require('mongoose');
+mongoose.Promise = Promise;
+mongoose.connect(`mongodb+srv://${config.db.user}:${config.db.password}@expressmovie.scuwy.mongodb.net/${config.db.database}?retryWrites=true&w=majority`,
+{   useNewUrlParser: true,
+    useUnifiedTopology: true, 
+    useFindAndModify: false
+}) 
+//ou
+// .then(() => console.log('Connexion à MongoDB réussie !'))
+// .catch(() => console.log('Connexion à MongoDB échouée !'));
+
+const db = mongoose.connection;
+db.on('error', console.error.bind(console, 'Connexion à MongoDB échouée !'))
+db.once('open', () => {
+    console.log('Connexion à MongoDB réussie !');
+})
+
+// //////FAKE DATA ///////////////////////////
+// const title = faker.lorem.sentence(3);
+// const year = Math.floor(Math.random() * 80) + 1950;
+// const myMovie = new Movie({ movietitle: title, movieyear: year});
+// myMovie.save((err, savedMovie) => {
+//     if(err) {
+//         console.log(err);
+//     } else {
+//         console.log('savedMovie', savedMovie);
+//     }
+// })
+
+const PORT = 3000;
 
 app.set('views', './views');
 app.set('view engine', 'ejs');
 
-var urlencodedParser = bodyParser.urlencoded({ extended: false });
+app.use('/public', express.static('public'));
 
-app.get('/movies', (req, res) => {
-    
-    const title = 'Films français des trente dernières années'
-
-    frenchMovies = [
-        { title: 'Le fabuleux destin d\'Amélie Poulain', year: 2001 },
-        { title: 'Buffet froid', year: 1979 },
-        { title: 'Le diner de cons', year: 1998 },
-        { title: 'De rouille et d\'os', year: 2012 },
-    ]
-    res.render('movies', { movies: frenchMovies, title: title })
-});
-
-// app.post('/movies', (req, res) => {
-//     console.log('le titre : ', req.body.movietitle);
-//     console.log('année : ', req.body.movieyear);
-//     const newMovies = { title : req.body.movietitle, year: req.body.movieyear };
-//     frenchMovies = [...frenchMovies, newMovies];
-//     console.log(frenchMovies);
-//     res.sendStatus(201);
-// })
-
-app.post('/movies', upload.fields([]), (req, res) => {
-    if(!req.body) {
-        return res.sendStatus(500);
-    } else {
-        const formData = req.body;
-        console.log('formData: ', formData);
-        const newMovies = { title : req.body.movietitle, year: req.body.movieyear };
-        frenchMovies = [...frenchMovies, newMovies];
-        res.sendStatus(201);
-    }
-})
-
-app.get('/movies/add', (req, res) => {
-    res.send('Prochainement, un formulaire d\'ajout ici');
-})
-
-app.get('/movies/:id', (req, res) => {
-    const id = req.params.id
-    // res.send(`Film numéro ${id}`);
-    res.render('movie-details', { movieid: id });
-})
-
-// app.get('/movie-details', (req, res) => {
-//     res.render('movie-details')
-// })
+app.use(expressJwt({ secret: config.db.secret, algorithms: ['HS256']}).unless({ path: ['/', '/movies', new RegExp('/movies.*/', 'i'), '/movie-search','/login', new RegExp('/movie-details.*/', 'i')]}));
 
 app.get('/', (req, res) => {
     // res.send('Hello World !!!!!');
     res.render('index');
 });
 
-app.get('/movie-search', (req, res) => {
-    res.render('movie-search');
-})
+app.get('/movies', movieController.getMovies);
+    
+var urlencodedParser = bodyParser.urlencoded({ extended: false });
 
-app.get('/login', (req, res) => {
-    res.render('login', { title: 'Connexion'});
-});
+app.post('/movies', upload.fields([]), movieController.postMovie);
 
-const fakeUser = { email: 'testuser@testmail.fr', password: 'qsd' };
+app.post('/movies-old-browser', urlencodedParser, movieController.getMoviesOldBrowsers);
 
-app.post('/login', urlencodedParser, (req, res) => {
-    console.log('login post', req.body);
-    if (!req.body) {
-        return res.sendStatus(500);
-    } else {        
-        if(fakeUser.email === req.body.email && fakeUser.password === req.body.password) {
-            res.json({ 
-                        email: 'testuser@testmail.fr', 
-                        favoriteMovie: 'Il etait une fois dans l\'Ouest',
-                        favoriteMovieTheater: 'Ciné Gaumont, 29 Rue Alain Chartier, 75015 Paris', 
-                        lastLoginDate: new Date() 
-                    });
-        } else {
-            res.sendStatus(401);
-        } 
-    } 
-});
+app.get('/movies/add', movieController.getMoviesAdd)
+
+app.get('/movies/:id', movieController.getMovieById)
+
+app.get('/movie-details/:id', movieController.getMovieDetails)
+
+app.post('/movie-details/:id', urlencodedParser, movieController.postMovieDetails);
+
+app.delete('/movie-details/:id', movieController.deleteMovie);
+
+app.get('/movie-search', movieController.movieSearch)
+
+app.get('/login', authController.login);
+
+app.post('/login', urlencodedParser, authController.postLogin);
+
+app.get('/member-only', authController.getMemberOnly);
 
 app.listen(PORT, () => {
     console.log(`listening on port ${PORT}`);
